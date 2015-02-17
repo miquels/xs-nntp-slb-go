@@ -11,6 +11,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +25,16 @@ type NNTPCmd struct {
 	help      string
 }
 var nntpcmds []*NNTPCmd
+
+type NNTPStats struct {
+	accepted	uint64
+	refused		uint64
+	rejected	uint64
+	tempfail	uint64
+	takethis	uint64
+	ihave		uint64
+}
+var nntpstats NNTPStats
 
 var nntpclients []*NNTPSession
 var nntpserver *NNTPSession
@@ -73,6 +84,45 @@ func addPort(addr string, port string) (ret string) {
 		ret = addr + ":" + port
 	}
 	return
+}
+
+func updateStats(code int) {
+	var ptr1, ptr2 *uint64
+	switch code {
+		// IHAVE
+		case 235:
+			ptr1 = &nntpstats.accepted
+			ptr2 = &nntpstats.ihave
+		case 435:
+			ptr1 = &nntpstats.refused
+			ptr2 = &nntpstats.ihave
+		case 436:
+			ptr1 = &nntpstats.tempfail
+			ptr2 = &nntpstats.ihave
+		case 437:
+			ptr1 = &nntpstats.rejected
+			ptr2 = &nntpstats.ihave
+		// CHECK + TAKETHIS
+		case 239:
+			ptr1 = &nntpstats.accepted
+			ptr2 = &nntpstats.takethis
+		case 431:
+			ptr1 = &nntpstats.tempfail
+			ptr2 = &nntpstats.takethis
+		case 438:
+			ptr1 = &nntpstats.refused
+			ptr2 = &nntpstats.takethis
+		case 439:
+			ptr1 = &nntpstats.rejected
+			ptr2 = &nntpstats.takethis
+		default:
+	}
+	if ptr1 != nil {
+		atomic.AddUint64(ptr1, 1)
+	}
+	if ptr2 != nil {
+		atomic.AddUint64(ptr2, 1)
+	}
 }
 
 //
@@ -312,6 +362,10 @@ func run_nntpclient(sess *NNTPSession) {
 		Log.Debug("%s: popped %s", sess.name, r.line)
 		r.code = int(code)
 		r.line = line
+
+		if r.code > 0 {
+			updateStats(r.code)
+		}
 
 		// set to ready in the global queue
 		nntpserver.q.Ready(r)
