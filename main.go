@@ -48,15 +48,17 @@ func jenkinshash(key string) (res uint32) {
 //	Slower MD5 hash (still pretty fast)
 //	Used for compatibility with the C version.
 //
-func md5hash(key string) (res uint32) {
-	hash := md5.Sum([]byte(key))
-	res = uint32(hash[0]) + (uint32(hash[1]) << 8) +
-		(uint32(hash[2]) << 16) + (uint32(hash[3]) << 24)
-	return
+func md5hash(key string) (res uint64) {
+        hash := md5.Sum([]byte(key))
+        res = uint64(hash[0]) + (uint64(hash[1]) << 8) +
+                (uint64(hash[2]) << 16) + (uint64(hash[3]) << 24) +
+                (uint64(hash[4]) << 32) + (uint64(hash[5]) << 40) +
+                (uint64(hash[6]) << 48) + (uint64(hash[7]) << 56)
+        return
 }
 
 func map_client(msgid string) *NNTPSession {
-	return nntpclients[int(md5hash(msgid) % uint32(len(nntpclients)))]
+	return nntpclients[int(md5hash(msgid) % uint64(len(nntpclients)))]
 }
 
 //
