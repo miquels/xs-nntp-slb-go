@@ -39,6 +39,7 @@ var nntpstats NNTPStats
 var nntpclients []*NNTPSession
 var nntpserver *NNTPSession
 var ihave_sess *NNTPSession
+var startTime time.Time = time.Now()
 
 //
 //	Fast jenkins hash
@@ -125,6 +126,16 @@ func updateStats(code int) {
 	}
 }
 
+func logStats() {
+	secs := int(time.Since(startTime).Seconds())
+	n := &nntpstats
+	Log.Notice("%s: stats: accepted=%d refused=%d rejected=%d " +
+		"tempfail=%d takethis=%d ihave=%d seconds=%d",
+		nntpserver.name,
+		n.accepted, n.refused, n.rejected,
+		n.tempfail, n.takethis, n.ihave, secs)
+}
+
 //
 // Connect to the backend server, wait for banner, send XCLIENT,
 // and expect a 200 status code.
@@ -146,7 +157,7 @@ func NewNNTPClient(num int, rem string) (sess *NNTPSession, err error) {
 	if err != nil {
 		return
 	}
-	if (line[0] != '2') {
+	if (len(line) == 0 || line[0] != '2') {
 		err = fmt.Errorf("connect failed: %s", ChompString(line))
 		return
 	}
@@ -164,7 +175,7 @@ func NewNNTPClient(num int, rem string) (sess *NNTPSession, err error) {
 	if err != nil {
 		return
 	}
-	if (line[0] != 2) {
+	if (len(line) == 0 || line[0] != '2') {
 		err = fmt.Errorf("XCLIENT failed: %s", ChompString(line))
 		return
 	}
@@ -215,7 +226,7 @@ func cmd_forward(sess *NNTPSession, c *NNTPSession, line string, arg []string, m
 	// And write request to backend
 	if multi {
 		err = c.Write(line)
-		if err != nil {
+		if err == nil {
 			err = sess.CopyDotCRLF(c)
 		}
 	} else {
@@ -340,6 +351,7 @@ func run_nntpclient(sess *NNTPSession) {
 	for {
 		line, err := sess.ReadLine()
 		if err != nil {
+			logStats()
 			Log.Fatal("%s: unexpected: %s (FATAL)", sess.name, err)
 		}
 		var code int64
@@ -356,10 +368,10 @@ func run_nntpclient(sess *NNTPSession) {
 		// queue, and update it.
 		r := sess.q.PopFirst()
 		if r == nil {
+			logStats()
 			Log.Fatal("%s: got unexpected reply (command " +
 				  "queue empty) (FATAL)", sess.name)
 		}
-		Log.Debug("%s: popped %s", sess.name, r.line)
 		r.code = int(code)
 		r.line = line
 
@@ -398,6 +410,7 @@ func run_nntpserver(sess *NNTPSession) {
 				cmd_quit(sess, "quit\r\n", []string{})
 				break
 			}
+			logStats()
 			Log.Fatal("%s: unexpected: %s (FATAL)",
 				sess.name, err.Error())
 		}
@@ -410,6 +423,7 @@ func run_nntpserver(sess *NNTPSession) {
 			arg := []string{ "ihave" }
 			err = cmd_forward(sess, ihave_sess, line, arg, true)
 			if err != nil {
+				logStats()
 				Log.Fatal("%s: error during IHAVE forward" +
 					  " to %s: %s (FATAL)", sess.name,
 					  ihave_sess.name, err.Error())
@@ -419,7 +433,6 @@ func run_nntpserver(sess *NNTPSession) {
 		}
 		ihave_sess = nil
 
-		Log.Debug("<< %s", line)
 		words := strings.Fields(line)
 		if len(words) == 0 {
 			// most NNTP servers seem to ignore empty lines
@@ -441,6 +454,7 @@ func run_nntpserver(sess *NNTPSession) {
 			} else {
 				err = c.fun(sess, line, words)
 				if err != nil {
+					logStats()
 					Log.Fatal("%s: error on %s: %s (FATAL)",
 					sess.name, words[0], err.Error())
 				}
@@ -448,7 +462,6 @@ func run_nntpserver(sess *NNTPSession) {
 		}
 		if (found == false) {
 			Log.Error("%s: unknown command: %s", sess.name, line)
-			Log.Debug(">> 500 What?")
 			sendreply(sess, cmd, "500 What?\r\n")
 		}
 		if cmd == "quit" {
@@ -456,6 +469,7 @@ func run_nntpserver(sess *NNTPSession) {
 			break
 		}
 	}
+	logStats()
 }
 
 func main() {
