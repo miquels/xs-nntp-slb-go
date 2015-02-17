@@ -275,7 +275,7 @@ func cmd_quit(sess *NNTPSession, line string, arg []string) (err error) {
 		cmd_forward(sess, c, line, arg, false)
 	}
 	// note: QUIT in capitals means it won't get matched in nntpqueue.go
-	if len(arg) > 0 {
+	if len(arg) == 1 {
 		err = sendreply(sess, "QUIT", "205 Goodbye\r\n")
 	}
 	return
@@ -407,7 +407,8 @@ func run_nntpserver(sess *NNTPSession) {
 			if err == io.EOF && sess.q.Len() == 0 {
 				Log.Notice("%s: EOF", sess.name)
 				// send QUIT to backends.
-				cmd_quit(sess, "quit\r\n", []string{})
+				cmd_quit(sess, "quit\r\n",
+					[]string{"quit", "quiet"})
 				break
 			}
 			logStats()
@@ -520,16 +521,26 @@ func main() {
 	if err != nil {
 		Log.Fatal(err.Error())
 	}
+
 	rem := conn.RemoteAddr().(*net.TCPAddr).IP.String()
+	names, err := net.LookupAddr(rem)
+	if err == nil && len(names) > 0 && len(names[0]) > 1 {
+		rem = names[0]
+		l := len(rem) - 1
+		if rem[l] == '.' {
+			rem = rem[:l]
+		}
+	}
+		
 	nntpserver = NewNNTPSession(conn, rem)
 	nntpserver.q.sess = nntpserver
 
 	// connect to all remote servers
 	if len(remote) == 0 {
-		remote = os.Getenv("REMOTE")
+		remote = os.Getenv("REALSERVERS")
 	}
 	if len(remote) == 0 {
-		Log.Fatal("REMOTE not set")
+		Log.Fatal("-backend and $REALSERVERS not set")
 	}
 	var num int
 	for _, rem := range strings.Split(remote, ",") {
@@ -558,7 +569,7 @@ func main() {
 	run_nntpserver(nntpserver)
 
 	// Wait for all backends to QUIT
-	Log.Notice("%s: waiting for backends to shut down", nntpserver.name)
+	Log.Info("%s: waiting for backends to shut down", nntpserver.name)
 
 	var timeout bool
 	timeChan := time.NewTimer(time.Second * 10).C
