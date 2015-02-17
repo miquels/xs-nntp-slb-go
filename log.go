@@ -93,13 +93,7 @@ func (l *Slog) Printf(level int, format string, a ...interface{}) {
 	} else {
 		s = fmt.Sprintf(format, a...)
 	}
-	var n int
-	for n = len(s); n > 0; n-- {
-		if s[n-1] != '\r' && s[n-1] != '\n' {
-			break
-		}
-	}
-	l.WriteString(level, s[:n])
+	l.WriteString(level, ChompString(s))
 }
 
 func (l *Slog) Debug(fmt string, a ...interface{}) {

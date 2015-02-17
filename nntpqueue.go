@@ -29,13 +29,7 @@ type NNTPQueue struct {
 func (req *NNTPReq) addmsgid() {
 	if req.code == 430 && len(req.msgid) > 0 &&
 	   strings.IndexByte(req.line, '<') < 0 {
-		var l int
-		for l = len(req.line); l > 0; l-- {
-			if req.line[l-1] != '\r' && req.line[l-1] != '\n' {
-				break
-			}
-		}
-		req.line = req.line[:l] + " " + req.msgid + "\r\n"
+		req.line = ChompString(req.line) + " " + req.msgid + "\r\n"
 	}
 }
 
