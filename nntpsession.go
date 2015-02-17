@@ -126,6 +126,7 @@ func (sess *NNTPSession) CopyDotCRLF(out *NNTPSession) (err error) {
                 }
                 state = 0
         }
+	err = out.w.Flush()
 	return
 }
 
