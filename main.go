@@ -276,8 +276,7 @@ func run_nntpclient(sess *NNTPSession) {
 	for {
 		line, err := sess.ReadLine()
 		if err != nil {
-			Log.Error("%s: unexpected: %s", sess.name, err)
-			break
+			Log.Fatal("%s: unexpected: %s (FATAL)", sess.name, err)
 		}
 		var code int64
 		if len(line) > 2 {
@@ -286,7 +285,6 @@ func run_nntpclient(sess *NNTPSession) {
 		if code == 0 {
 			Log.Error("%s: cannot parse reply code: %s",
 				sess.name, line)
-			break
 		}
 
 		// So we have a reply. It corresponds to the oldest
@@ -295,7 +293,7 @@ func run_nntpclient(sess *NNTPSession) {
 		r := sess.q.PopFirst()
 		if r == nil {
 			Log.Fatal("%s: got unexpected reply (command " +
-				  "queue empty)", sess.name)
+				  "queue empty) (FATAL)", sess.name)
 		}
 		Log.Debug("%s: popped %s", sess.name, r.line)
 		r.code = int(code)
@@ -319,7 +317,7 @@ func run_nntpserver(sess *NNTPSession) {
 	hostname, _ := os.Hostname()
 	err := sess.WriteAndFlush(fmt.Sprintf(banner, hostname))
 	if err != nil {
-		Log.Error("%s: unexpected: %s", sess.name, err)
+		Log.Error("%s: unexpected: %s", sess.name, err.Error())
 		return
 	}
 
@@ -330,7 +328,8 @@ func run_nntpserver(sess *NNTPSession) {
 				Log.Notice("%s: EOF", sess.name)
 				break
 			}
-			Log.Fatal("%s: unexpected: %s", sess.name, err)
+			Log.Fatal("%s: unexpected: %s (FATAL)",
+				sess.name, err.Error())
 		}
 		lastcode := sess.q.LastCode()
 		fmt.Printf("lastcode %d\n", lastcode)
@@ -343,8 +342,8 @@ func run_nntpserver(sess *NNTPSession) {
 			err = cmd_forward(sess, ihave_sess, line, arg, true)
 			if err != nil {
 				Log.Fatal("%s: error during IHAVE forward" +
-					  " to %s: %s", sess.name,
-					  ihave_sess.name, err)
+					  " to %s: %s (FATAL)", sess.name,
+					  ihave_sess.name, err.Error())
 			}
 			ihave_sess = nil
 			continue
@@ -455,7 +454,7 @@ func main() {
 				c.Close()
 			}
 			nntpserver.CloseMsg("500 " + err.Error() + "\r\n")
-			Log.Fatal(err.Error())
+			Log.Fatal("%s: %s (FATAL)", err.Error())
 		}
 		nntpclients = append(nntpclients, s)
 	}

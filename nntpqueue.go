@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"sync/atomic"
 	"sync"
 )
 
@@ -18,7 +19,7 @@ type NNTPQueue struct {
 	qlock     sync.Mutex
 	wlock     sync.Mutex
 	sess      *NNTPSession
-	lastcode  int
+	lastcode  int32
 }
 
 //
@@ -100,7 +101,7 @@ func (q *NNTPQueue) run() {
 
 		q.qlock.Lock()
 		if len(q.queue) == 0 || !q.queue[0].ready {
-			q.lastcode = req.code
+			atomic.StoreInt32(&q.lastcode, int32(req.code))
 			break;
 		}
 	}
@@ -113,6 +114,10 @@ func (q *NNTPQueue) run() {
 		Log.Fatal("%s: lost connection(flush) - force exit: %s",
 			q.sess.name, err)
 	}
+}
+
+func (q *NNTPQueue) LastCode() int {
+	return int(atomic.LoadInt32(&q.lastcode))
 }
 
 func (q *NNTPQueue) Run() {
