@@ -4,13 +4,13 @@ import (
 	"crypto/md5"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -59,6 +59,20 @@ func md5hash(key string) (res uint64) {
 
 func map_client(msgid string) *NNTPSession {
 	return nntpclients[int(md5hash(msgid) % uint64(len(nntpclients)))]
+}
+
+func addPort(addr string, port string) (ret string) {
+	ret = addr
+	colons := strings.Count(addr, ":")
+	if addr[0] == '[' || colons == 1 {
+		return
+	}
+	if colons > 1 {
+		ret = "[" + addr + "]:" + port
+	} else {
+		ret = addr + ":" + port
+	}
+	return
 }
 
 //
@@ -157,8 +171,13 @@ func cmd_forward(sess *NNTPSession, c *NNTPSession, line string, arg []string, m
 }
 
 func cmd_ihave(sess *NNTPSession, line string, arg []string) {
+	if sess.q.Len() > 0 {
+		sendreply(sess, arg[0],
+			"436 This command MUST NOT be pipelined\r\n")
+		return
+	}
 	c := map_client(arg[1])
-	_ = cmd_forward(sess, c, line, arg, false)
+	cmd_forward(sess, c, line, arg, false)
 	ihave_sess = c
 }
 
@@ -175,7 +194,8 @@ func cmd_simple(sess *NNTPSession, line string, arg []string) {
 //
 func cmd_withbody(sess *NNTPSession, line string, arg []string) {
 	c := map_client(arg[1])
-	_ = cmd_forward(sess, c, line, arg, false)
+	cmd_forward(sess, c, line, arg, false)
+	sess.CopyDotCRLF(c)
 }
 
 //
@@ -259,7 +279,10 @@ func run_nntpclient(sess *NNTPSession) {
 			Log.Error("%s: unexpected: %s", sess.name, err)
 			break
 		}
-		code, _ := strconv.ParseInt(line[0:3], 10, 16)
+		var code int64
+		if len(line) > 2 {
+			code, _ = strconv.ParseInt(line[0:3], 10, 16)
+		}
 		if code == 0 {
 			Log.Error("%s: cannot parse reply code: %s",
 				sess.name, line)
@@ -270,6 +293,10 @@ func run_nntpclient(sess *NNTPSession) {
 		// command in our local queue. Pop it from the local
 		// queue, and update it.
 		r := sess.q.PopFirst()
+		if r == nil {
+			Log.Fatal("%s: got unexpected reply (command " +
+				  "queue empty)", sess.name)
+		}
 		Log.Debug("%s: popped %s", sess.name, r.line)
 		r.code = int(code)
 		r.line = line
@@ -299,23 +326,38 @@ func run_nntpserver(sess *NNTPSession) {
 	for {
 		line, err := sess.ReadLine()
 		if err != nil {
-			Log.Error("%s: unexpected: %s", sess.name, err)
-			break
+			if err == io.EOF && sess.q.Len() == 0 {
+				Log.Notice("%s: EOF", sess.name)
+				break
+			}
+			Log.Fatal("%s: unexpected: %s", sess.name, err)
 		}
-		if sess.q.lastcode == 335 {
+		lastcode := sess.q.LastCode()
+		fmt.Printf("lastcode %d\n", lastcode)
+		if ihave_sess != nil && lastcode == 335 {
 			//
 			// Last code we saw was a 335 reply
 			// to IHAVE - forward article now.
 			//
-			err = sess.CopyDotCRLF(ihave_sess)
+			arg := []string{ "ihave" }
+			err = cmd_forward(sess, ihave_sess, line, arg, true)
 			if err != nil {
-				Log.Fatal("%s: error during IHAVE forward to %s: %s", sess.name, ihave_sess.name, err)
+				Log.Fatal("%s: error during IHAVE forward" +
+					  " to %s: %s", sess.name,
+					  ihave_sess.name, err)
 			}
 			ihave_sess = nil
+			continue
 		}
+		ihave_sess = nil
 
 		Log.Debug("<< %s", line)
 		words := strings.Fields(line)
+		if len(words) == 0 {
+			// most NNTP servers seem to ignore empty lines
+			continue
+		}
+
 		words[0] = strings.ToLower(words[0])
 		cmd := words[0]
 		nargs := len(words) - 1
@@ -338,10 +380,10 @@ func run_nntpserver(sess *NNTPSession) {
 			sendreply(sess, cmd, "500 What?\r\n")
 		}
 		if cmd == "quit" {
+			Log.Notice("%s: QUIT", sess.name)
 			break
 		}
 	}
-	Log.Notice("%s: seen QUIT", sess.name)
 }
 
 func main() {
@@ -396,8 +438,6 @@ func main() {
 	nntpserver = NewNNTPSession(conn, rem)
 	nntpserver.q.sess = nntpserver
 
-	var wg sync.WaitGroup
-
 	// connect to all remote servers
 	if len(remote) == 0 {
 		remote = os.Getenv("REMOTE")
@@ -408,6 +448,7 @@ func main() {
 	var num int
 	for _, rem := range strings.Split(remote, ",") {
 		num++
+		rem = addPort(rem, "119")
 		s, err := NewNNTPClient(num, rem)
 		if err != nil {
 			for _, c := range nntpclients {
@@ -419,22 +460,40 @@ func main() {
 		nntpclients = append(nntpclients, s)
 	}
 
+	doneChan := make(chan bool)
 	for _, c := range nntpclients {
-		wg.Add(1)
 		go func (c *NNTPSession) {
-			defer wg.Done()
 			run_nntpclient(c)
+			doneChan <- true
 		}(c)
 	}
 
 	run_nntpserver(nntpserver)
 
 	// Wait for all backends to QUIT
-	Log.Notice("%s: waiting for all backends to shut down", nntpserver.name)
-	wg.Wait()
+	Log.Notice("%s: waiting for backends to shut down", nntpserver.name)
 
-	nntpserver.q.Run()
-	nntpserver.Close()
+	var timeout bool
+	timeChan := time.NewTimer(time.Second * 10).C
+
+	for n := 0; n < len(nntpclients); n++ {
+		select {
+			case <- doneChan:
+				// nothing, just loop
+			case <- timeChan:
+				timeout = true
+				break
+		}
+	}
+
+	if timeout {
+		Log.Error("%s: timeout waiting for backend(s) to close",
+				nntpserver.name)
+	} else {
+		nntpserver.q.Run()
+		nntpserver.Close()
+	}
+
 	Log.Notice("%s: exit", nntpserver.name)
 }
 
