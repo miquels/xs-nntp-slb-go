@@ -18,7 +18,7 @@ func NewNNTPSession(conn net.Conn, name string) *NNTPSession {
 		conn: conn,
 		name: name,
 		r : bufio.NewReaderSize(conn, 32768),
-		w : bufio.NewWriter(conn),
+		w : bufio.NewWriterSize(conn, 32768),
 	}
 	return sess
 }
