@@ -1,7 +1,15 @@
+//
+//	Package that provides an alternative to 'log'
+//	The interface is similar (but not the same)
+//	Can write to stderr or syslog or both
+//
+//	TODO: somehow log stack trace from panic() as well..
+//
 package main
 
 import (
 	"fmt"
+	"log"
 	"log/syslog"
 	"os"
 	"path/filepath"
@@ -9,7 +17,7 @@ import (
 )
 
 const (
-	LogSyslog = iota
+	LogSyslog = 1 << iota
 	LogStderr
 )
 
@@ -21,56 +29,61 @@ const (
 	LogError
 )
 
-type logWriter interface {
-	WriteString(level int, msg string)
-}
-
-type logSyslog struct {
-	w *syslog.Writer
-}
-
-type logStderr struct {
-}
-
 type Slog struct {
-	w	logWriter
+	s *syslog.Writer
+	t int
 }
 
 var Log Slog
 var logLabel string
 var logDebug bool
 
-func newLogSyslog() (l *logSyslog) {
-	l = &logSyslog{}
-	w, err := syslog.New(syslog.LOG_NEWS|syslog.LOG_NOTICE, logLabel)
+func (l *Slog) initSyslog() {
+	s, err := syslog.New(syslog.LOG_NEWS|syslog.LOG_NOTICE, logLabel)
 	if err != nil {
 		panic("syslog.New failed")
 	}
-	l.w = w
+	l.s = s
 	return
 }
 
-func (l *logSyslog) WriteString(level int, msg string) {
+func (l *Slog) syslogWriteString(level int, msg string) {
 	switch level {
-		case LogDebug:  _ = l.w.Debug(msg)
-		case LogInfo:   _ = l.w.Info(msg)
-		case LogNotice: _ = l.w.Notice(msg)
-		case LogError:  _ = l.w.Err(msg)
-		default:        _ = l.w.Err(msg)
+		case LogDebug:  _ = l.s.Debug(msg)
+		case LogInfo:   _ = l.s.Info(msg)
+		case LogNotice: _ = l.s.Notice(msg)
+		case LogError:  _ = l.s.Err(msg)
+		default:        _ = l.s.Err(msg)
 	}
 }
 
-func (l *logStderr) WriteString(level int, msg string) {
+func (l *Slog) stderrWriteString(level int, msg string) {
 	t := time.Now()
 	fmt.Fprintf(os.Stderr, "%s %s: %s\n",
 		t.Format(time.Stamp), logLabel, msg)
 }
 
-func (l *Slog) SetOutput(fl int) {
-	switch fl {
-		case LogSyslog: l.w = newLogSyslog()
-		case LogStderr: l.w = &logStderr{}
+func (l *Slog) WriteString(level int, msg string) {
+	if (l.t & LogSyslog) != 0 {
+		l.syslogWriteString(level, msg)
 	}
+	if (l.t & LogStderr) != 0 {
+		l.stderrWriteString(level, msg)
+	}
+}
+
+func (l *Slog) Write(msg []byte) (n int, err error) {
+	l.WriteString(LogError, string(msg))
+	n = len(msg)
+	return
+}
+
+func (l *Slog) SetOutput(fl int) {
+	switch {
+		case (fl & LogSyslog) != 0:
+		case (fl & LogStderr) != 0:
+	}
+	l.t = fl
 }
 
 func (l *Slog) Printf(level int, format string, a ...interface{}) {
@@ -86,7 +99,7 @@ func (l *Slog) Printf(level int, format string, a ...interface{}) {
 			break
 		}
 	}
-	l.w.WriteString(level, s[:n])
+	l.WriteString(level, s[:n])
 }
 
 func (l *Slog) Debug(fmt string, a ...interface{}) {
@@ -114,6 +127,12 @@ func (l *Slog) Fatal(fmt string, a ...interface{}) {
 
 func init() {
 	logLabel = filepath.Base(os.Args[0])
-	Log.w = newLogSyslog()
+	Log.t = LogSyslog
+
+	Log.initSyslog()
+
+	log.SetOutput(&Log)
+	log.SetFlags(0)
+	log.SetPrefix("")
 }
 

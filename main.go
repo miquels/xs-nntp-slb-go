@@ -352,6 +352,8 @@ func main() {
 	var remote string
 	var listen string
 
+	Log.SetOutput(LogSyslog|LogStderr)
+
 	flag.IntVar(&gomaxprocs, "gomaxprocs", 1, "number of threads")
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "filename.prof")
 	flag.StringVar(&remote, "backend", "", "ip:port[,ip:port...]")
@@ -384,6 +386,7 @@ func main() {
 		}
 		conn, err = l.Accept()
 	} else {
+		Log.SetOutput(LogSyslog)
 		conn, err = net.FileConn(os.Stdin)
 	}
 	if err != nil {
