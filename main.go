@@ -20,7 +20,7 @@ type NNTPCmd struct {
 	name      string
 	minargs   int
 	maxargs   int
-	fun       func(sess *NNTPSession, line string, argv []string)
+	fun       func(sess *NNTPSession, line string, argv []string) (error)
 	help      string
 }
 var nntpcmds []*NNTPCmd
@@ -86,7 +86,7 @@ func NewNNTPClient(num int, rem string) (sess *NNTPSession, err error) {
 	Log.Info("%s: connecting", name)
 	conn, err := net.DialTimeout("tcp", rem, tmout)
 	if err != nil {
-		Log.Error("%s: connect: %s", name, err)
+		err = fmt.Errorf("connect: %s", err.Error())
 		return
 	}
 	sess = NewNNTPSession(conn, name)
@@ -97,7 +97,7 @@ func NewNNTPClient(num int, rem string) (sess *NNTPSession, err error) {
 		return
 	}
 	if (line[0] != '2') {
-		err = fmt.Errorf("%s: connect failed: %s", sess.name, line)
+		err = fmt.Errorf("connect failed: %s", ChompString(line))
 		return
 	}
 
@@ -105,7 +105,7 @@ func NewNNTPClient(num int, rem string) (sess *NNTPSession, err error) {
 	xclient := nntpserver.conn.RemoteAddr().(*net.TCPAddr).IP.String()
 	err = sess.WriteAndFlush(fmt.Sprintf("XCLIENT %s\r\n", xclient))
 	if err != nil {
-		err = fmt.Errorf("%s: lost connection: %s", sess.name, err)
+		err = fmt.Errorf("lost connection: %s", err)
 		return
 	}
 
@@ -114,11 +114,10 @@ func NewNNTPClient(num int, rem string) (sess *NNTPSession, err error) {
 	if err != nil {
 		return
 	}
-	// XXX DEBUG FIXME
-	//if (line[0] != 2) {
-	//	err = fmt.Errorf("%s: XCLIENT: failed: %s", sess.name, line)
-	//	return
-	//}
+	if (line[0] != 2) {
+		err = fmt.Errorf("XCLIENT failed: %s", ChompString(line))
+		return
+	}
 
 	conn.SetDeadline(time.Time{})
 	return
@@ -127,13 +126,14 @@ func NewNNTPClient(num int, rem string) (sess *NNTPSession, err error) {
 //
 //	Send a simple reply
 //
-func sendreply(sess *NNTPSession, cmd string, line string) {
+func sendreply(sess *NNTPSession, cmd string, line string) (err error) {
 	req := &NNTPReq{
 		line : line,
 		cmd : cmd,
 		ready : true,
 	}
 	sess.q.Add(req, true)
+	return
 }
 
 //
@@ -163,56 +163,67 @@ func cmd_forward(sess *NNTPSession, c *NNTPSession, line string, arg []string, m
 	c.q.Add(req, false)
 
 	// And write request to backend
-	err = c.WriteAndFlush(line)
-	if err == nil && multi {
-		err = sess.CopyDotCRLF(c)
+	if multi {
+		err = c.Write(line)
+		if err != nil {
+			err = sess.CopyDotCRLF(c)
+		}
+	} else {
+		err = c.WriteAndFlush(line)
 	}
 	return
 }
 
-func cmd_ihave(sess *NNTPSession, line string, arg []string) {
+func cmd_ihave(sess *NNTPSession, line string, arg []string) (err error) {
 	if sess.q.Len() > 0 {
 		sendreply(sess, arg[0],
 			"436 This command MUST NOT be pipelined\r\n")
 		return
 	}
 	c := map_client(arg[1])
-	cmd_forward(sess, c, line, arg, false)
-	ihave_sess = c
+	err = cmd_forward(sess, c, line, arg, false)
+	if err == nil {
+		ihave_sess = c
+	}
+	return
 }
 
 //
 //	Send a simple command to a backend.
 //
-func cmd_simple(sess *NNTPSession, line string, arg []string) {
+func cmd_simple(sess *NNTPSession, line string, arg []string) (err error) {
 	c := map_client(arg[1])
-	_ = cmd_forward(sess, c, line, arg, false)
+	err = cmd_forward(sess, c, line, arg, false)
+	return
 }
 
 //
 //	Send a command + body to a backend
 //
-func cmd_withbody(sess *NNTPSession, line string, arg []string) {
+func cmd_withbody(sess *NNTPSession, line string, arg []string) (err error) {
 	c := map_client(arg[1])
-	cmd_forward(sess, c, line, arg, false)
-	sess.CopyDotCRLF(c)
+	err = cmd_forward(sess, c, line, arg, true)
+	return
 }
 
 //
 //	Quit command
 //
-func cmd_quit(sess *NNTPSession, line string, arg []string) {
+func cmd_quit(sess *NNTPSession, line string, arg []string) (err error) {
 	for _, c := range nntpclients {
-		_ = cmd_forward(sess, c, line, arg, false)
+		cmd_forward(sess, c, line, arg, false)
 	}
 	// note: QUIT in capitals means it won't get matched in nntpqueue.go
-	sendreply(sess, "QUIT", "205 Goodbye\r\n")
+	if len(arg) > 0 {
+		err = sendreply(sess, "QUIT", "205 Goodbye\r\n")
+	}
+	return
 }
 
 //
 //	Help command
 //
-func cmd_help(sess *NNTPSession, line string, arg []string) {
+func cmd_help(sess *NNTPSession, line string, arg []string) (err error) {
 	r := "100 Legal commands\r\n";
 	for _, c := range nntpcmds {
 		var spc string
@@ -224,26 +235,28 @@ func cmd_help(sess *NNTPSession, line string, arg []string) {
 		r += fmt.Sprintf("  %s%s%s\r\n", c.name, spc, c.help)
 	}
 	r += ".\r\n"
-	sendreply(sess, arg[0], r)
+	err = sendreply(sess, arg[0], r)
+	return 
 }
 
 //
 //	Capa command
 //
-func cmd_capa(sess *NNTPSession, line string, arg []string) {
+func cmd_capa(sess *NNTPSession, line string, arg []string) (err error) {
 	r := "101 Capability list:\r\n"
 	r += "version 2\r\n"
 	r += "implementation xs-nntp-slb-go\r\n"
 	r += "ihave\r\n"
 	r += "streaming\r\n"
 	r += ".\r\n"
-	sendreply(sess, arg[0], r)
+	err = sendreply(sess, arg[0], r)
+	return
 }
 
 //
 //	Mode command
 //
-func cmd_mode(sess *NNTPSession, line string, arg []string) {
+func cmd_mode(sess *NNTPSession, line string, arg []string) (err error) {
 	var r string
 	what := strings.ToLower(arg[1])
 	if (what != "stream") {
@@ -251,7 +264,8 @@ func cmd_mode(sess *NNTPSession, line string, arg []string) {
 	} else {
 		r = "203 Streaming permitted\r\n"
 	}
-	sendreply(sess, arg[0], r)
+	err = sendreply(sess, arg[0], r)
+	return
 }
 
 // Command dispatch table
@@ -326,13 +340,14 @@ func run_nntpserver(sess *NNTPSession) {
 		if err != nil {
 			if err == io.EOF && sess.q.Len() == 0 {
 				Log.Notice("%s: EOF", sess.name)
+				// send QUIT to backends.
+				cmd_quit(sess, "quit\r\n", []string{})
 				break
 			}
 			Log.Fatal("%s: unexpected: %s (FATAL)",
 				sess.name, err.Error())
 		}
 		lastcode := sess.q.LastCode()
-		fmt.Printf("lastcode %d\n", lastcode)
 		if ihave_sess != nil && lastcode == 335 {
 			//
 			// Last code we saw was a 335 reply
@@ -370,7 +385,11 @@ func run_nntpserver(sess *NNTPSession) {
 				Log.Error("%s: syntax error: %s", sess.name, line)
 				sendreply(sess, cmd, "435 syntax error\r\n")
 			} else {
-				c.fun(sess, line, words)
+				err = c.fun(sess, line, words)
+				if err != nil {
+					Log.Fatal("%s: error on %s: %s (FATAL)",
+					sess.name, words[0], err.Error())
+				}
 			}
 		}
 		if (found == false) {
@@ -453,8 +472,9 @@ func main() {
 			for _, c := range nntpclients {
 				c.Close()
 			}
-			nntpserver.CloseMsg("500 " + err.Error() + "\r\n")
-			Log.Fatal("%s: %s (FATAL)", err.Error())
+			nntpserver.CloseMsg("500 backend " + rem + ": " +
+						err.Error() + "\r\n")
+			Log.Fatal("%s:%d: %s (FATAL)", rem, num, err.Error())
 		}
 		nntpclients = append(nntpclients, s)
 	}
