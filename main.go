@@ -1,7 +1,7 @@
 package main
 
 import (
-	"strings"
+	"crypto/md5"
 	"flag"
 	"fmt"
 	"net"
@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,6 +29,9 @@ var nntpclients []*NNTPSession
 var nntpserver *NNTPSession
 var ihave_sess *NNTPSession
 
+//
+//	Fast jenkins hash
+//
 func jenkinshash(key string) (res uint32) {
     for _, e := range key {
         res += uint32(e)
@@ -40,8 +44,19 @@ func jenkinshash(key string) (res uint32) {
     return
 }
 
+//
+//	Slower MD5 hash (still pretty fast)
+//	Used for compatibility with the C version.
+//
+func md5hash(key string) (res uint32) {
+	hash := md5.Sum([]byte(key))
+	res = uint32(hash[0]) + (uint32(hash[1]) << 8) +
+		(uint32(hash[2]) << 16) + (uint32(hash[3]) << 24)
+	return
+}
+
 func map_client(msgid string) *NNTPSession {
-	return nntpclients[int(jenkinshash(msgid) % uint32(len(nntpclients)))]
+	return nntpclients[int(md5hash(msgid) % uint32(len(nntpclients)))]
 }
 
 //
