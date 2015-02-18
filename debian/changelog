@@ -1,4 +1,4 @@
-xs-nntp-slb (1.0) wheezy jessie; urgency=low
+xs-nntp-slb-go (1.0) wheezy jessie; urgency=low
 
   * rewrite in Go.
   * initial release.
