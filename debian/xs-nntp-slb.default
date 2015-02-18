@@ -1,0 +1,6 @@
+# On which port to listen
+LISTEN=1119
+
+# Which servers to forward to
+REALSERVERS="127.0.0.1:119"
+

@@ -1,0 +1,6 @@
+xs-nntp-slb (1.0) wheezy jessie; urgency=low
+
+  * rewrite in Go.
+  * initial release.
+
+ -- Miquel van Smoorenburg (XS4ALL) <mikevs@xs4all.net>  Wed, 18 Feb 2015 09:59:19 +0100

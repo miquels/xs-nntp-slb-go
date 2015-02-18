@@ -1,0 +1,18 @@
+# Rotate news syslog files
+# Should not be installed if "inn" is installed as well...
+
+/var/log/news/news.* {
+	daily
+	missingok
+	rotate 4
+	olddir /var/log/news/OLD
+	compress
+	delaycompress
+	notifempty
+	create 644 news news
+	sharedscripts
+	postrotate
+		PATH=/sbin:/usr/sbin:$PATH
+		service rsyslog rotate > /dev/null
+	endscript
+}
