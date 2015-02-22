@@ -75,6 +75,8 @@ func (q *NNTPQueue) run() {
 
 	Log.Debug("running queue, len is %d", len(q.queue))
 
+	olen := len(q.queue)
+
 	for {
 		req := q.queue[0]
 		q.queue = q.queue[1:]
@@ -89,8 +91,9 @@ func (q *NNTPQueue) run() {
 
 		if err != nil {
 			// whoops, remote client has gone away
-			Log.Fatal("%s: lost connection(write) - force exit: " +
-				"%s on %s", q.sess.name, err, req.line)
+			Log.Fatal("%s: lost connection(write, qlen=%d->%d): " +
+				"%s on %s (FATAL)", q.sess.name, olen, q.Len(),
+				err, ChompString(req.line))
 		}
 
 		q.qlock.Lock()
@@ -101,12 +104,11 @@ func (q *NNTPQueue) run() {
 	}
 
 	err := q.sess.Flush()
-	Log.Debug("done running queue, len is %d\n", len(q.queue))
 	q.wlock.Unlock()
 	if err != nil {
 		// whoops, remote client has gone away
-		Log.Fatal("%s: lost connection(flush) - force exit: %s",
-			q.sess.name, err)
+		Log.Fatal("%s: lost connection(flush, qlen=%d->%d): %s (FATAL)",
+			q.sess.name, olen, q.Len(), err)
 	}
 }
 

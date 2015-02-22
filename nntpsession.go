@@ -136,6 +136,7 @@ func (sess *NNTPSession) Close() {
 }
 
 func (sess *NNTPSession) CloseMsg(msg string) {
+	Log.Info("%s: session closed", sess.name)
 	sess.WriteAndFlush(msg)
 	sess.conn.Close()
 }
