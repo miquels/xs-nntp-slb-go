@@ -2,8 +2,12 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"net"
+	"os"
 )
+
+var debugFile = "/tmp/xs-nntp-slb-go.dbg"
 
 type NNTPSession struct {
 	conn net.Conn
@@ -11,6 +15,8 @@ type NNTPSession struct {
 	r    *bufio.Reader
 	w    *bufio.Writer
 	q    NNTPQueue
+	dbgFile *os.File
+	dbgName string
 }
 
 func NewNNTPSession(conn net.Conn, name string) *NNTPSession {
@@ -23,12 +29,31 @@ func NewNNTPSession(conn net.Conn, name string) *NNTPSession {
 	return sess
 }
 
+func (sess *NNTPSession) enableDbg(fn string) {
+	file, err := os.OpenFile(fn, os.O_CREATE|os.O_EXCL|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		s := fmt.Sprintf("started for %s pid %d\n", sess.name, os.Getpid())
+		sess.dbgFile = file
+		sess.dbgName = fn
+		sess.dbgFile.WriteString(s)
+	}
+}
+
+func (sess *NNTPSession) writeDbg(dir string, line string) {
+	if sess.dbgFile == nil {
+		return
+	}
+	sess.dbgFile.WriteString(dir + " " + line)
+}
+
 func (sess *NNTPSession) ReadLine() (line string, err error) {
 	line, err = sess.r.ReadString('\n')
+	sess.writeDbg("<<", line)
 	return
 }
 
 func (sess *NNTPSession) Write(line string) (err error) {
+	sess.writeDbg(">>", line)
 	_, err = sess.w.WriteString(line)
 	return
 }
@@ -39,6 +64,7 @@ func (sess *NNTPSession) Flush() (err error) {
 }
 
 func (sess *NNTPSession) WriteAndFlush(line string) (err error) {
+	sess.writeDbg(">>", line)
 	if _, err = sess.w.WriteString(line); err == nil {
 		err = sess.w.Flush()
 	}
@@ -133,11 +159,17 @@ func (sess *NNTPSession) CopyDotCRLF(out *NNTPSession) (err error) {
 func (sess *NNTPSession) Close() {
 	Log.Info("%s: session closed", sess.name)
 	sess.conn.Close()
+	//if sess.dbgFile != nil {
+	//	os.Remove(ses.dbgName)
+	//}
 }
 
 func (sess *NNTPSession) CloseMsg(msg string) {
 	Log.Info("%s: session closed", sess.name)
 	sess.WriteAndFlush(msg)
 	sess.conn.Close()
+	//if sess.dbgFile != nil {
+	//	os.Remove(ses.dbgName)
+	//}
 }
 
