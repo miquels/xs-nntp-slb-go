@@ -412,8 +412,8 @@ func run_nntpserver(sess *NNTPSession) {
 				break
 			}
 			logStats()
-			Log.Fatal("%s: unexpected: %s (FATAL)",
-				sess.name, err.Error())
+			Log.Fatal("%s: unexpected: %s (qlen=%d) (FATAL)",
+				sess.name, err.Error(), sess.q.Len())
 		}
 		lastcode := sess.q.LastCode()
 		if ihave_sess != nil && lastcode == 335 {
