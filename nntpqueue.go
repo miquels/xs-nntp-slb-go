@@ -108,7 +108,7 @@ func (q *NNTPQueue) run() {
 	if err != nil {
 		// whoops, remote client has gone away
 		Log.Fatal("%s: lost connection(flush, qlen=%d->%d): %s (FATAL)",
-			q.sess.name, olen, q.Len(), err)
+			q.sess.name, olen, len(q.queue), err)
 	}
 }
 
