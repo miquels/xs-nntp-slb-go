@@ -1,0 +1,18 @@
+# On which port to listen
+#LISTEN="194.109.133.84:119,[2001:888:0:311::1:5]:119,[::1]:119,127.0.0.1:119"
+
+# Which realservers do we have
+#REALSERVERS="194.109.133.90,194.109.133.91"
+
+# On which port to listen for cache messages from peers
+#CACHE_LISTEN="194.109.133.84:119"
+
+# Which cache peers to talk to
+#CACHE_PEERS="194.109.133.85:119"
+
+# If set, directory to coredump in.
+#COREDUMP=/var/tmp
+
+# Extra flags such as -N and -n
+#FLAGS="-N -n"
+

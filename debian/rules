@@ -3,10 +3,6 @@
 %:
 	dh $@
 
-override_dh_fixperms:
-	dh_fixperms
-	chown -R news:news debian/xs-nntp-slb-go/var/log/news
-
 override_dh_installinit:
-	dh_installinit --init-script xs-nntp-slb
+	dh_installinit -r --name xs-nntp-slb
 

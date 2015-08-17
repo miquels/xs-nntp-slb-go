@@ -1,7 +1,6 @@
 
-		$Id$
-
 xs-nntp-slb is a simplistic NNTP loadbalancer.
+==============================================
 
 It is mainly meant to be used as a frontend to a cluster of
 NNTP transit servers, to spread out the load.

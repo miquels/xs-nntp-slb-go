@@ -21,19 +21,19 @@
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 DESC="XS4ALL NNTP loadbalancer"
 NAME=xs-nntp-slb
-DAEMON=/usr/local/sbin/$NAME
-PIDFILE=/var/run/$NAME.pid
+DAEMON=/usr/sbin/$NAME
+PIDFILE=/run/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME
 
 # Exit if the package is not installed
 [ -x "$DAEMON" ] || exit 0
 
 # Read configuration variable file if it is present
-# (some of these settings are unused as of yet, like COREDUMP and CACHE_*)
 FLAGS=
 LISTEN=
 REALSERVERS=
 COREDUMP=
+CACHE_ARGS=
 [ -r /etc/default/$NAME ] && . /etc/default/$NAME
 
 if [ -z "$LISTEN" ] || [ -z "$REALSERVERS" ]

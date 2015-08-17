@@ -5,7 +5,6 @@
 	daily
 	missingok
 	rotate 4
-	olddir /var/log/news/OLD
 	compress
 	delaycompress
 	notifempty
